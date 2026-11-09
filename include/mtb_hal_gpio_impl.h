@@ -65,7 +65,7 @@ extern "C" {
 
 __STATIC_INLINE void mtb_hal_gpio_write_internal(mtb_hal_gpio_t* obj, bool value)
 {
-    Cy_GPIO_Write(obj->port_addr, (uint32_t)obj->pin_num, value);
+    Cy_GPIO_Write(obj->port_addr, (uint32_t)obj->pin_num, (uint32_t)value);
 }
 
 

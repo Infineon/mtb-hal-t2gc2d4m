@@ -53,6 +53,16 @@ static inline bool _mtb_hal_syspm_ensure_cb_registered_dsram_lptimer(void)
 }
 
 
+//--------------------------------------------------------------------------------------------------
+// _mtb_hal_syspm_ensure_cb_registered_hibram_lptimer
+//--------------------------------------------------------------------------------------------------
+static inline bool _mtb_hal_syspm_ensure_cb_registered_hibram_lptimer(void)
+{
+    // This IP does not support Hibernate RAM
+    return true;
+}
+
+
 #endif // (MTB_HAL_DRIVER_AVAILABLE_LPTIMER)
 #if defined(__cplusplus)
 }

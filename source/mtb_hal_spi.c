@@ -265,9 +265,9 @@ cy_rslt_t mtb_hal_spi_setup(mtb_hal_spi_t* obj, const mtb_hal_spi_configurator_t
     obj->base = config->base;
     obj->clock = (clock == NULL) ? config->clock : clock;
     obj->context = context;
-    obj->is_target = (bool)!config->config->spiMode;
-    obj->data_bits = config->config->txDataWidth;
-    obj->irq_cause = MTB_HAL_SPI_EVENT_NONE;
+    obj->is_target = ((uint32_t)config->config->spiMode == 0U);
+    obj->data_bits = (uint8_t)config->config->txDataWidth;
+    obj->irq_cause = (uint32_t)MTB_HAL_SPI_EVENT_NONE;
 
     return CY_RSLT_SUCCESS;
 }
@@ -388,39 +388,62 @@ cy_rslt_t mtb_hal_spi_target_read(mtb_hal_spi_t* obj, uint8_t* dst_buff, uint16_
     if ((obj != NULL) && (dst_buff != NULL) && (size != NULL))
     #endif // defined(MTB_HAL_DISABLE_ERR_CHECK)
     {
-        /* Wait until the controller starts writing or data is available in the target RX buffer */
-        status = _mtb_hal_wait_for_status(obj, _MTB_HAL_SPI_WAIT_OP_RD_NOT_BUSY, &timeout,
-                                          _mtb_hal_check_spi_status);
-
-        if (CY_RSLT_SUCCESS != status)
-        {
-            *size = 0U;
-            return MTB_HAL_SPI_RSLT_ERR_TIMEOUT;
-        }
-
-        uint32_t i = 0U;
         uint16_t size_remaining = *size;
-        while ((i < (timeout * MTB_HAL_SPI_US_IN_MS)) && (size_remaining > 0U) &&
-               (mtb_hal_spi_is_busy(obj) || Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U))
+
+        if (timeout > 0U)
         {
+            /* Wait until the controller start writing or any data will be in the target RX
+               buffer */
+            status = _mtb_hal_wait_for_status(obj, _MTB_HAL_SPI_WAIT_OP_RD_NOT_BUSY, &timeout,
+                                              _mtb_hal_check_spi_status);
+
+            if (CY_RSLT_SUCCESS != status)
+            {
+                *size = 0U;
+                return MTB_HAL_SPI_RSLT_ERR_TIMEOUT;
+            }
+
+            uint32_t i = 0U;
+            while ((i < (timeout * MTB_HAL_SPI_US_IN_MS)) && (size_remaining > 0U) &&
+                   (mtb_hal_spi_is_busy(obj) || Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U))
+            {
+                if (Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U)
+                {
+                    size_remaining -= (uint16_t)Cy_SCB_SPI_ReadArray(obj->base,
+                                                                     (void*)&dst_buff[*size -
+                                                                                      size_remaining],
+                                                                     size_remaining);
+                }
+                mtb_hal_system_delay_us(1U);
+                i++;
+            }
+
+            if (size_remaining == 0U)
+            {
+                status = CY_RSLT_SUCCESS;
+            }
+            else if (i >= (timeout * MTB_HAL_SPI_US_IN_MS))
+            {
+                status = MTB_HAL_SPI_RSLT_ERR_TIMEOUT;
+            }
+            else
+            {
+                /* Controller ended transfer early — return SUCCESS with actual byte count */
+                status = CY_RSLT_SUCCESS;
+            }
+        }
+        else
+        {
+            /* timeout=0: do not wait, just drain whatever is currently in the RX FIFO */
             if (Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U)
             {
                 size_remaining -= (uint16_t)Cy_SCB_SPI_ReadArray(obj->base,
-                                                                 (void*)&dst_buff[*size -
-                                                                                  size_remaining],
+                                                                 (void*)dst_buff,
                                                                  size_remaining);
             }
-            mtb_hal_system_delay_us(1U);
-            i++;
-        }
-        if (size_remaining == 0U)
-        {
             status = CY_RSLT_SUCCESS;
         }
-        else if (i >= (timeout * MTB_HAL_SPI_US_IN_MS))
-        {
-            status = MTB_HAL_SPI_RSLT_ERR_TIMEOUT;
-        }
+
         *size = (*size - size_remaining);
     }
 
@@ -439,7 +462,7 @@ cy_rslt_t mtb_hal_spi_controller_write(mtb_hal_spi_t* obj, const uint8_t* src_bu
     if ((src_buff != NULL) && (size != NULL))
     #endif // defined(MTB_HAL_DISABLE_ERR_CHECK)
     {
-        *size = Cy_SCB_SPI_WriteArray(obj->base, (void*)src_buff, *size);
+        *size = (uint16_t)Cy_SCB_SPI_WriteArray(obj->base, (void*)src_buff, *size);
         return CY_RSLT_SUCCESS;
     }
     #if !defined(MTB_HAL_DISABLE_ERR_CHECK)
@@ -527,11 +550,11 @@ void mtb_hal_spi_enable_event(mtb_hal_spi_t* obj, mtb_hal_spi_event_t event, boo
 {
     if (enable)
     {
-        obj->irq_cause |= event;
+        obj->irq_cause |= (uint32_t)event;
     }
     else
     {
-        obj->irq_cause &= ~event;
+        obj->irq_cause &= ~(uint32_t)event;
     }
 }
 
@@ -545,20 +568,30 @@ static void _mtb_hal_spi_cb_wrapper(uint32_t event)
        here, they
      * just might change where the original pointer points */
     mtb_hal_spi_t* obj = (mtb_hal_spi_t*)_mtb_hal_spi_irq_obj;
+
+    if (NULL == obj)
+    {
+        return;
+    }
+
     mtb_hal_spi_event_t anded_events = (mtb_hal_spi_event_t)(obj->irq_cause & ((uint32_t)event));
 
     // Don't call the callback until the final transfer has put everything in the FIFO/completed
-    if ((anded_events & (MTB_HAL_SPI_IRQ_DATA_IN_FIFO | MTB_HAL_SPI_IRQ_DONE)) &&
+    if ((((uint32_t)anded_events &
+          ((uint32_t)MTB_HAL_SPI_IRQ_DATA_IN_FIFO | (uint32_t)MTB_HAL_SPI_IRQ_DONE)) != 0U) &&
         !((obj->rx_buffer == NULL) && (obj->tx_buffer == NULL)))
     {
         return;
     }
 
-    if (anded_events)
+    if (0U != (obj->irq_cause & event))
     {
         mtb_hal_spi_event_callback_t callback =
             (mtb_hal_spi_event_callback_t)obj->callback_data.callback;
-        callback(obj->callback_data.callback_arg, anded_events);
+        if (NULL != callback)
+        {
+            callback(obj->callback_data.callback_arg, anded_events);
+        }
     }
 }
 
@@ -580,7 +613,7 @@ void mtb_hal_spi_register_callback(mtb_hal_spi_t* obj, mtb_hal_spi_event_callbac
 //--------------------------------------------------------------------------------------------------
 // mtb_hal_spi_process_interrupt
 //--------------------------------------------------------------------------------------------------
-cy_rslt_t mtb_hal_spi_process_interrupt(mtb_hal_spi_t* spi)
+cy_rslt_t mtb_hal_spi_process_interrupt(mtb_hal_spi_t* obj)
 {
     /* Save the old value and store it afterwards in case we get into a nested IRQ situation */
     /* Safe to cast away volatile because we don't expect this pointer to be changed while we're in
@@ -588,23 +621,23 @@ cy_rslt_t mtb_hal_spi_process_interrupt(mtb_hal_spi_t* spi)
      * just might change where the original pointer points */
     mtb_hal_spi_t* old_irq_obj = (mtb_hal_spi_t*)_mtb_hal_spi_irq_obj;
 
-    if (NULL == spi)
+    if (NULL == obj)
     {
         return MTB_HAL_SPI_RSLT_BAD_ARGUMENT;  /* The interrupt object is not valid */
     }
 
-    _mtb_hal_spi_irq_obj = spi;
+    _mtb_hal_spi_irq_obj = obj;
 
-    Cy_SCB_SPI_Interrupt(spi->base, (spi->context));
+    Cy_SCB_SPI_Interrupt(obj->base, (obj->context));
 
-    if (spi->is_async)
+    if (obj->is_async)
     {
         if (0 ==
-            (Cy_SCB_SPI_GetTransferStatus(spi->base, spi->context) & CY_SCB_SPI_TRANSFER_ACTIVE))
+            (Cy_SCB_SPI_GetTransferStatus(obj->base, obj->context) & CY_SCB_SPI_TRANSFER_ACTIVE))
         {
             /* Finish Async Transfer */
-            spi->pending = _MTB_HAL_SPI_PENDING_NONE;
-            spi->is_async = false;
+            obj->pending = _MTB_HAL_SPI_PENDING_NONE;
+            obj->is_async = false;
         }
     }
 
@@ -629,38 +662,62 @@ cy_rslt_t mtb_hal_spi_target_read_transaction(mtb_hal_spi_t* obj, uint8_t* dst_b
     if ((obj != NULL) && (dst_buff != NULL) && (size != NULL))
     #endif // defined(MTB_HAL_DISABLE_ERR_CHECK)
     {
-        /* Wait until the controller start writing or any data will be in the target RX buffer */
-        status = _mtb_hal_wait_for_status(obj, _MTB_HAL_SPI_WAIT_OP_RD_NOT_BUSY, &timeout,
-                                          _mtb_hal_check_spi_status);
-
-        if (CY_RSLT_SUCCESS != status)
-        {
-            return status;
-        }
-
-        uint32_t i = 0U;
         uint16_t size_remaining = *size;
-        while ((i < (timeout * MTB_HAL_SPI_US_IN_MS)) && (size_remaining > 0U) &&
-               (mtb_hal_spi_is_busy(obj) || Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U))
+
+        if (timeout > 0U)
         {
+            /* Wait until the controller start writing or any data will be in the target RX
+               buffer */
+            status = _mtb_hal_wait_for_status(obj, _MTB_HAL_SPI_WAIT_OP_RD_NOT_BUSY, &timeout,
+                                              _mtb_hal_check_spi_status);
+
+            if (CY_RSLT_SUCCESS != status)
+            {
+                *size = 0U;
+                return MTB_HAL_SPI_RSLT_ERR_TIMEOUT;
+            }
+
+            uint32_t i = 0U;
+            while ((i < (timeout * MTB_HAL_SPI_US_IN_MS)) && (size_remaining > 0U) &&
+                   (mtb_hal_spi_is_busy(obj) || Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U))
+            {
+                if (Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U)
+                {
+                    size_remaining -= (uint16_t)Cy_SCB_SPI_ReadArray(obj->base,
+                                                                     (void*)&dst_buff[*size -
+                                                                                      size_remaining],
+                                                                     size_remaining);
+                }
+                mtb_hal_system_delay_us(1U);
+                i++;
+            }
+
+            if (size_remaining == 0U)
+            {
+                status = CY_RSLT_SUCCESS;
+            }
+            else if (i >= (timeout * MTB_HAL_SPI_US_IN_MS))
+            {
+                status = MTB_HAL_SPI_RSLT_ERR_TIMEOUT;
+            }
+            else
+            {
+                /* Controller ended transfer early — return SUCCESS with actual byte count */
+                status = CY_RSLT_SUCCESS;
+            }
+        }
+        else
+        {
+            /* timeout=0: do not wait, just drain whatever is currently in the RX FIFO */
             if (Cy_SCB_SPI_GetNumInRxFifo(obj->base) > 0U)
             {
                 size_remaining -= (uint16_t)Cy_SCB_SPI_ReadArray(obj->base,
-                                                                 (void*)&dst_buff[*size -
-                                                                                  size_remaining],
+                                                                 (void*)dst_buff,
                                                                  size_remaining);
             }
-            mtb_hal_system_delay_us(1U);
-            i++;
-        }
-        if (size_remaining == 0U)
-        {
             status = CY_RSLT_SUCCESS;
         }
-        else if (i >= (timeout * MTB_HAL_SPI_US_IN_MS))
-        {
-            status = MTB_HAL_SPI_RSLT_ERR_TIMEOUT;
-        }
+
         *size = (*size - size_remaining);
     }
 

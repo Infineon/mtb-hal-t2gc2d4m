@@ -68,7 +68,7 @@ __STATIC_INLINE uint32_t _mtb_hal_gpio_get_interrupt_status_masked(mtb_hal_gpio_
 /** Return the interrupt cause */
 __STATIC_INLINE uint32_t _mtb_hal_gpio_get_interrupt_cause(mtb_hal_gpio_t* obj)
 {
-    return 1 << (obj->port_num);
+    return 1UL << (obj->port_num);
 }
 
 

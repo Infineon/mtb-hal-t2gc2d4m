@@ -5,32 +5,44 @@ On devices which contain multiple cores, this library is supported on all cores.
 
 ### What's Included?
 This release of the HAL includes support for the following drivers:
+* ADC
 * Clock
+* DMA
 * GPIO
+* I2C
 * LPTimer
 * MemorySPI
 * NVM
+* PWM
+* RTC
 * SPI
 * SysPm
 * System
+* TRNG
+* Timer
 * UART
 
 ### What Changed?
+#### v1.1.0
+* Added ADC, DMA, I2C, PWM, RTC, Timer, and TRNG drivers.
+* NVM: Added mtb_hal_nvm_is_blank() and mtb_hal_nvm_is_sector_corrupt() APIs.
+* LPTimer: Fixed incorrect MCWDT_B selection when the WDT_B hardware block is absent.
+* UART: Fixed TX_EMPTY interrupt handling and masked-event race conditions in the IRQ path.
+* UART: Corrected the transmit path so flow-control stalls do not leave the interrupt state stuck.
+
 #### v1.0.0
 * Production support for TRAVEO™ T2G CYT3DL devices.
-
 
 ### Supported Software and Tools
 This version of the Hardware Abstraction Layer was validated for compatibility with the following Software and Tools:
 
 | Software and Tools                        | Version |
 | :---                                      | :----:  |
-| ModusToolbox&trade; Software Environment        | 3.7.0   |
+| ModusToolbox&trade; Software Environment        | 3.8.0   |
 | GCC Compiler                              | 14.2.1  |
 | IAR Compiler                              | 9.50.2  |
 | ARM Compiler                              | 6.22    |
 
-Minimum required ModusToolbox&trade; Software Environment: v3.3
 
 ### More information
 Use the following links for more information, as needed:

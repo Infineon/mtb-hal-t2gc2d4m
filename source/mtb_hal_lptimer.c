@@ -88,7 +88,7 @@ void mtb_hal_lptimer_enable_event(mtb_hal_lptimer_t* obj, mtb_hal_lptimer_event_
     CY_ASSERT(event == MTB_HAL_LPTIMER_COMPARE_MATCH);
     CY_UNUSED_PARAMETER(event);
 
-    obj->isr_instruction &= ~_MTB_HAL_LPTIMER_ISR_CALL_USER_CB_MASK;
+    obj->isr_instruction &= (uint8_t)(~(uint8_t)_MTB_HAL_LPTIMER_ISR_CALL_USER_CB_MASK);
     obj->isr_instruction |= (uint8_t)enable;
 
     if (enable)
@@ -102,7 +102,7 @@ void mtb_hal_lptimer_enable_event(mtb_hal_lptimer_t* obj, mtb_hal_lptimer_event_
            interrupt */
         if (_mtb_hal_lptimer_get_interrupt_status(obj->base) != 0)
         {
-            obj->isr_instruction |= _MTB_HAL_LPTIMER_ISR_CRITICAL_SECTION_MASK;
+            obj->isr_instruction |= (uint8_t)_MTB_HAL_LPTIMER_ISR_CRITICAL_SECTION_MASK;
         }
         else
         #endif

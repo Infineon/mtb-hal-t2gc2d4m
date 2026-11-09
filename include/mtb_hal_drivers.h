@@ -27,12 +27,19 @@
 
 #pragma once
 
+#include "mtb_hal_adc.h"
 #include "mtb_hal_clock.h"
+#include "mtb_hal_dma.h"
 #include "mtb_hal_gpio.h"
+#include "mtb_hal_i2c.h"
 #include "mtb_hal_lptimer.h"
 #include "mtb_hal_memoryspi.h"
 #include "mtb_hal_nvm.h"
+#include "mtb_hal_pwm.h"
+#include "mtb_hal_rtc.h"
 #include "mtb_hal_spi.h"
 #include "mtb_hal_syspm.h"
 #include "mtb_hal_system.h"
+#include "mtb_hal_trng.h"
+#include "mtb_hal_timer.h"
 #include "mtb_hal_uart.h"

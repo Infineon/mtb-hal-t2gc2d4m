@@ -47,7 +47,8 @@
 extern "C" {
 #endif /* defined(__cplusplus) */
 
-#if (defined (CY_IP_MXS40SRSS) && (CY_IP_MXS40SRSS_VERSION >= 2)) || ((SRSS_NUM_MCWDT_B) > 0)
+#if (defined (CY_IP_MXS40SRSS) && (CY_IP_MXS40SRSS_VERSION >= 2)) || (((SRSS_NUM_MCWDT_B) > 0) && \
+    (SRSS_WDT_B_PRESENT != 0))
 
 /*******************************************************************************
 *                           Defines
@@ -103,7 +104,7 @@ __STATIC_INLINE uint32_t _mtb_hal_lptimer_read(const mtb_hal_lptimer_t* obj)
 __STATIC_INLINE uint32_t _mtb_hal_lptimer_counter_to_mask(cy_en_mcwdtctr_t counter)
 {
     /* Get the mask (for e.g. ClearInterrupt) associated with a particular counter */
-    return 1UL << counter;
+    return 1UL << (uint32_t)counter;
 }
 
 

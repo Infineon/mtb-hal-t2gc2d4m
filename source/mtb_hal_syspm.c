@@ -107,7 +107,7 @@ void _mtb_hal_syspm_ensure_cb_registered_dslock(void)
         .nextItm        = NULL,
         .order          = 0u, /* Check for locked before anything else */
     };
-    bool intr_status = mtb_hal_system_critical_section_enter();
+    uint32_t intr_status = mtb_hal_system_critical_section_enter();
     if (false == registered_cb)
     {
         registered_cb = true;
@@ -215,12 +215,12 @@ void _mtb_hal_syspm_ensure_cb_registered_lptimer(void)
         .order          = 255u,
     };
 
-    bool intr_status = mtb_hal_system_critical_section_enter();
+    uint32_t intr_status = mtb_hal_system_critical_section_enter();
     if (false == registered_cb)
     {
         registered_cb = true;
 
-        memset(&_mtb_hal_syspm_lptimer_context, 0u, sizeof(_mtb_hal_syspm_lptimer_context));
+        memset(&_mtb_hal_syspm_lptimer_context, 0, sizeof(_mtb_hal_syspm_lptimer_context));
         bool newly_registered = Cy_SysPm_RegisterCallback(&cb_deepsleep);
         // We only try the registration once, so the PDL should never report false
         CY_ASSERT(newly_registered);
@@ -229,6 +229,9 @@ void _mtb_hal_syspm_ensure_cb_registered_lptimer(void)
         CY_ASSERT(newly_registered);
 
         newly_registered = Cy_SysPm_RegisterCallback(&cb_sleep);
+        CY_ASSERT(newly_registered);
+
+        newly_registered = _mtb_hal_syspm_ensure_cb_registered_hibram_lptimer();
         CY_ASSERT(newly_registered);
 
         CY_UNUSED_PARAMETER(newly_registered);
@@ -282,7 +285,7 @@ static cy_en_syspm_status_t _mtb_hal_syspm_cb_wrapper(
 //--------------------------------------------------------------------------------------------------
 static cy_rslt_t _mtb_hal_syspm_deepsleep_internal(void)
 {
-    return Cy_SysPm_CpuEnterDeepSleep(CY_SYSPM_WAIT_FOR_INTERRUPT);
+    return (cy_rslt_t)Cy_SysPm_CpuEnterDeepSleep(CY_SYSPM_WAIT_FOR_INTERRUPT);
 }
 
 
@@ -294,12 +297,12 @@ cy_rslt_t mtb_hal_syspm_register_callback(mtb_hal_syspm_callback_data_t* obj,
 {
     CY_ASSERT(obj != NULL);
     CY_ASSERT(params != NULL);
-    memset(obj, 0u, sizeof(mtb_hal_syspm_callback_data_t));
+    memset(obj, 0, sizeof(mtb_hal_syspm_callback_data_t));
     // Populate PDL-level params
     obj->pdl_cb.callback = _mtb_hal_syspm_cb_wrapper;
     // We store this as a uint32_t on the HAL object to avoid circular includes
     obj->pdl_cb.type = (cy_en_syspm_callback_type_t)params->state;
-    obj->pdl_cb.skipMode = (cy_en_syspm_callback_mode_t)params->ignore_modes;
+    obj->pdl_cb.skipMode = (uint32_t)params->ignore_modes;
     obj->pdl_cb.order = _MTB_HAL_SYSPM_CALLBACK_ORDER;
     obj->pdl_cb.callbackParams = &(obj->cb_params);
     // We don't have a traditional "base address" here, so we repurpose that to store the
@@ -332,7 +335,10 @@ void mtb_hal_syspm_lock_deepsleep(void)
     _mtb_hal_syspm_ensure_cb_registered_dslock();
     CY_ASSERT(_mtb_hal_syspm_deepsleep_lock != USHRT_MAX);
     uint32_t intr_status = mtb_hal_system_critical_section_enter();
-    _mtb_hal_syspm_deepsleep_lock++;
+    if (_mtb_hal_syspm_deepsleep_lock < USHRT_MAX)
+    {
+        _mtb_hal_syspm_deepsleep_lock++;
+    }
     mtb_hal_system_critical_section_exit(intr_status);
 }
 
@@ -344,7 +350,10 @@ void mtb_hal_syspm_unlock_deepsleep(void)
 {
     CY_ASSERT(_mtb_hal_syspm_deepsleep_lock != 0U);
     uint32_t intr_status = mtb_hal_system_critical_section_enter();
-    _mtb_hal_syspm_deepsleep_lock--;
+    if (_mtb_hal_syspm_deepsleep_lock > 0U)
+    {
+        _mtb_hal_syspm_deepsleep_lock--;
+    }
     mtb_hal_system_critical_section_exit(intr_status);
 }
 
@@ -354,7 +363,7 @@ void mtb_hal_syspm_unlock_deepsleep(void)
 //--------------------------------------------------------------------------------------------------
 cy_rslt_t mtb_hal_syspm_deepsleep(void)
 {
-    if (_mtb_hal_syspm_deepsleep_lock != 0)
+    if (_mtb_hal_syspm_deepsleep_lock != 0U)
     {
         return MTB_HAL_SYSPM_RSLT_DEEPSLEEP_LOCKED;
     }
@@ -406,7 +415,7 @@ cy_rslt_t _mtb_hal_syspm_tickless_sleep_deepsleep(mtb_hal_lptimer_t* obj, uint32
 {
     cy_rslt_t result = CY_RSLT_SUCCESS;
 
-    if ((deep_sleep == true) && (_mtb_hal_syspm_deepsleep_lock != 0))
+    if ((deep_sleep == true) && (_mtb_hal_syspm_deepsleep_lock != 0U))
     {
         return MTB_HAL_SYSPM_RSLT_DEEPSLEEP_LOCKED;
     }
@@ -497,6 +506,11 @@ cy_rslt_t mtb_hal_syspm_tickless_hibernate_ram(mtb_hal_lptimer_t* lptimer_obj,
                                                uint32_t desired_ms, uint32_t* actual_ms)
 {
     cy_rslt_t result = CY_RSLT_SUCCESS;
+
+    if (_mtb_hal_syspm_deepsleep_lock != 0)
+    {
+        return MTB_HAL_SYSPM_RSLT_DEEPSLEEP_LOCKED;
+    }
 
     #if defined(_MTB_HAL_SYSPM_SUPPORTS_HIB_RAM_MODE) && (MTB_HAL_DRIVER_AVAILABLE_LPTIMER != 0)
     CY_ASSERT(lptimer_obj != NULL);

@@ -116,13 +116,18 @@ __STATIC_INLINE cy_rslt_t mtb_hal_uart_get_internal(mtb_hal_uart_t* obj, uint8_t
 //--------------------------------------------------------------------------------------------------
 __STATIC_INLINE cy_rslt_t mtb_hal_uart_put_internal(mtb_hal_uart_t* obj, uint32_t value)
 {
-    uint32_t count = 0;
-    while (count == 0)
-    {
-        count = Cy_SCB_UART_Put(obj->base, value);
-    }
+    uint32_t retry = 200;   /* 2 ms max wait should be enough to send one byte out */
 
-    return CY_RSLT_SUCCESS;
+    do
+    {
+        if (0U != Cy_SCB_UART_Put(obj->base, value))
+        {
+            return CY_RSLT_SUCCESS;
+        }
+        mtb_hal_system_delay_us(10);
+    } while (--retry != 0U);
+
+    return MTB_HAL_UART_RSLT_ERR_BUSY;
 }
 
 
